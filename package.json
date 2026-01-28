@@ -1,0 +1,11 @@
+{
+  "name": "gateia-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces"
+  }
+}
