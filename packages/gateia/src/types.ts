@@ -2,12 +2,18 @@ import { z } from 'zod';
 
 export type GateOutcome = 'pass' | 'block' | 'warn' | 'rewrite';
 
-export type PolicyAction = 'rewrite' | 'block' | 'log';
+export interface PolicyAction {
+  type: 'rewrite' | 'block' | 'log';
+  policyId: string;
+  note?: string;
+}
 
 export interface Violation {
   policyId: string;
+  code: string;
   message: string;
-  severity: 'critical' | 'warn';
+  severity: 'low' | 'med' | 'high';
+  evidence?: { snippet: string };
 }
 
 export interface PolicyContext {
@@ -55,22 +61,38 @@ export interface GateParams<T extends z.ZodTypeAny> {
   options?: GateOptions;
 }
 
+export interface AppliedPolicyRec {
+    id: string;
+    version?: string;
+    mode: 'enforce' | 'audit';
+    outcome: GateOutcome;
+    reasons?: string[];
+}
+
+export interface ContractEnforcement {
+    name?: string;
+    outcome: 'pass' | 'fail' | 'repaired';
+    errors?: { path: string; message: string }[];
+    repairs?: { op: 'add' | 'remove' | 'replace'; path: string; note?: string }[];
+}
+
 export interface GateEnforcementReport {
-  appliedPolicies: string[];
-  contractOutcome: 'pass' | 'fail' | 'repaired';
-  actions: string[];
+  appliedPolicies: AppliedPolicyRec[];
+  contract: ContractEnforcement;
+  actions: PolicyAction[];
   violations: Violation[];
 }
 
 export interface GateUsage {
   provider: string;
   model: string;
-  latencyMs?: number;
+  latencyMs: number;
   tokens?: {
     prompt: number;
     completion: number;
     total: number;
   };
+  costUsd?: number;
 }
 
 export interface GateResult<T> {

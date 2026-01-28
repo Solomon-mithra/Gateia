@@ -16,7 +16,7 @@ describe('PolicyEngine', () => {
     const blockPolicy: Policy = {
       id: 'no-foo',
       mode: 'enforce',
-      check: (output) => (output.includes('foo') ? { outcome: 'block', violations: [{ policyId: 'no-foo', message: 'foo detected', severity: 'critical' }] } : { outcome: 'pass' })
+      check: (output) => (output.includes('foo') ? { outcome: 'block', violations: [{ policyId: 'no-foo', code: 'TEST_FAIL', message: 'foo detected', severity: 'high' }] } : { outcome: 'pass' })
     };
     
     const result = await engine.evaluate([blockPolicy], 'has foo', context);

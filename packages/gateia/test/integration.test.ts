@@ -22,7 +22,7 @@ describe('gate() integration', () => {
         
         expect(result.safeOutput).toEqual({ mock: 'output' });
         expect(result.traceId).toBeDefined();
-        expect(result.enforcement.contractOutcome).toBe('pass');
+        expect(result.enforcement.contract.outcome).toBe('pass');
     });
 
     it('blocks on policy violation', async () => {
@@ -39,7 +39,7 @@ describe('gate() integration', () => {
         const failPolicy = {
             id: 'no-mock',
             mode: 'enforce' as const,
-            check: (out: any) => JSON.stringify(out).includes('mock') ? { outcome: 'block' as const, violations: [{ policyId: 'no-mock', message: 'no mocks allowed', severity: 'critical' as const }] } : { outcome: 'pass' as const }
+            check: (out: any) => JSON.stringify(out).includes('mock') ? { outcome: 'block' as const, violations: [{ policyId: 'no-mock', code: 'TEST_BLOCK', message: 'no mocks allowed', severity: 'high' as const }] } : { outcome: 'pass' as const }
         };
 
         await expect(gate({

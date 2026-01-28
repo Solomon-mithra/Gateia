@@ -1,6 +1,6 @@
 {
   "name": "gateia",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "The trust layer for AI in production. Middleware for model routing, contract enforcement, and policy compliance.",
   "keywords": [
     "ai",
@@ -43,9 +43,7 @@
   "engines": {
     "node": ">=18"
   },
-
   "sideEffects": false,
-
   "bugs": {
     "email": "solomonmithra99@gmail.com"
   }

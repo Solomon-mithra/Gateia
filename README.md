@@ -23,24 +23,24 @@ npm install gateia zod
 import { gate } from "gateia";
 import { z } from "zod";
 
-const LoanSchema = z.object({
-  approved: z.boolean(),
+const RefundSchema = z.object({
+  valid: z.boolean(),
   reason: z.string(),
-  risk_score: z.number()
+  refund_amount: z.number().max(500)
 });
 
 const result = await gate({
   model: "gpt-4.1",
-  prompt: "Evaluate this loan application... [App Data]",
-  contract: LoanSchema,
-  policies: ["finance-safe", "no-hallucinations"]
+  prompt: "Analyze this refund request against policy...", 
+  contract: RefundSchema,
+  policies: ["support-safe"]
 });
 
 console.log(result.safeOutput);
-// { approved: true, reason: "...", risk_score: 10 }
+// { valid: true, reason: "Item damaged in transit", refund_amount: 49.99 }
 
 console.log(result.enforcement.appliedPolicies); 
-// ['finance-safe', 'no-hallucinations']
+// [{ id: 'finance-safe', outcome: 'pass' }]
 
 console.log(result.traceId);
 // "uuid..."
@@ -69,22 +69,92 @@ GATEIA_MOCK_ADAPTERS=true
 - `policies`: Array of policy IDs (strings) or Policy objects.
 - `behavior`: Logic for repair, retries, and blocking.
 
+**Returns:** `Promise<GateResult<T>>`
+
+```typescript
+type GateResult<T> = {
+  safeOutput?: T;                 // Type-safe validated output
+  traceId: string;                // Unique ID for this request
+  
+  enforcement: {
+    appliedPolicies: Array<{
+      id: string;
+      mode: "enforce" | "audit";
+      outcome: "pass" | "warn" | "block";
+      reasons?: string[];
+    }>;
+    
+    contract: {
+      outcome: "pass" | "fail" | "repaired";
+      errors?: Array<{ path: string; message: string }>;
+    };
+    
+    actions: Array<{ type: "rewrite" | "block"; policyId?: string; }>;
+    violations: Array<{ 
+      policyId: string; 
+      code: string; 
+      severity: "low"|"med"|"high"; 
+      message: string; 
+    }>;
+  };
+
+  usage: {
+    model: string;
+    provider: string;
+    latencyMs: number;
+    tokens?: { prompt: number; completion: number; total: number };
+    costUsd?: number;
+  };
+};
+```
+
 ### Policies
 
-Gateia includes built-in policies:
-- `finance-safe`: Blocks "guaranteed returns".
-- `no-hallucinations`: (Audit only) Placeholder for hallucination checks.
+## Policy Library
 
-You can define custom policies:
+Gateia comes with a set of built-in policies you can use immediately.
+
+| Policy ID | Function | Checks For | Outcome |
+|-----------|----------|------------|---------|
+| **`finance-safe`** | Financial Compliance | "Guaranteed returns", "No risk", "Guaranteed approval", "100% guaranteed" | `BLOCK` |
+| **`support-safe`** | Support Safety (Alias) | Same as above. Useful for refund processing agents. | `BLOCK` |
+| **`pii-safe`** | Data Privacy | Email addresses (`x@y.com`), Phone numbers (Format: `123-456-7890`) | `BLOCK` |
+| **`secrets-safe`** | Security | API Keys (OpenAI, AWS, GitHub), Private Keys | `BLOCK` |
+| **`markup-safe`** | XSS Prevention | `<script>`, `<iframe>`, `javascript:` URIs | `BLOCK` |
+
+### Custom Policies
 ```typescript
-{
-  id: "my-policy",
-  mode: "enforce",
+import { gate, Policy } from 'gateia';
+
+// 1. Define your custom policy
+const noCompetitors: Policy = {
+  id: 'no-competitors',
+  mode: 'enforce', // 'audit' to just warn
   check: (output) => {
-    if (output.includes("bad word")) {
-      return { outcome: "block", violations: [...] };
+    // output is strict typed from your Contract (or string if simple)
+    const text = JSON.stringify(output).toLowerCase();
+    
+    if (text.includes('acme corp')) {
+        return {
+           outcome: 'block',
+           violations: [{
+               policyId: 'no-competitors',
+               code: 'COMPETITOR_MENTION',
+               message: 'Mentioned competitor Acme Corp',
+               severity: 'high',
+               evidence: { snippet: 'acme corp' }
+           }]
+        };
     }
-    return { outcome: "pass" };
+    return { outcome: 'pass' };
   }
-}
+};
+
+// 2. Use it in the gate
+await gate({
+  model: 'gpt-4',
+  prompt: 'Who is the best provider?',
+  contract: z.string(),
+  policies: ['finance-safe', noCompetitors] // Mix built-in ID strings and custom objects
+});
 ```

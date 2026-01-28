@@ -13,6 +13,7 @@ export interface AdapterOptions {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean; // If true, provider should enforce JSON output if supported
+  modelName?: string;
 }
 
 export interface ModelAdapter {

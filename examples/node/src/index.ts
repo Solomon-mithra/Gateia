@@ -8,10 +8,10 @@ process.env.GATEIA_MOCK_ADAPTERS = "true";
 async function main() {
   console.log("--- Gateia Example ---");
 
-  const LoanSchema = z.object({
-    approved: z.boolean(),
+  const RefundSchema = z.object({
+    valid: z.boolean(),
     reason: z.string(),
-    risk_score: z.number()
+    refund_amount: z.number().max(500)
   });
 
   // Since we are using the mock adapter which returns a fixed JSON string "{ mock: 'output' }",
@@ -34,20 +34,61 @@ async function main() {
         model: "gpt-4.1",
         prompt: "Evaluate this loan application...",
         contract: MockSchema, // Using mock schema to pass with stub
-        policies: ["finance-safe"]
+        policies: ["support-safe"]
       });
 
-      console.log("Safe Output:", result.safeOutput);
-      console.log("Enforcement:", result.enforcement);
-      console.log("TraceID:", result.traceId);
+    //   console.log("Safe Output:", result.safeOutput);
+    //   console.log("Enforcement:", result.enforcement);
+    //   console.log("TraceID:", result.traceId);
+      // console.log("result:", result);
+      console.log("Result:", JSON.stringify(result, null, 2));
   } catch (e: any) {
       console.error("Gate Error:", e.message);
       if (e.report) console.error("Report:", e.report);
   }
 
+  // 2. Running Policy Violation Gate...
   console.log("\n2. Running Policy Violation Gate...");
-  // We can't easily force the mock to produce "guaranteed returns" without changing the code.
-  // So we skip this or use a prompt that *would* trigger it if we had a real LLM.
+  
+  // Custom policy to force a block on the mock output
+  const blockMockPolicy = {
+      id: 'no-mock-data',
+      mode: 'enforce' as const,
+      check: (output: any) => {
+          const text = JSON.stringify(output);
+          if (text.includes('mock')) {
+              return {
+                  outcome: 'block' as const,
+                  violations: [{
+                      policyId: 'no-mock-data',
+                      code: 'MOCK_DETECTED',
+                      message: 'Mock data is not allowed in production!',
+                      severity: 'high' as const,
+                      evidence: { snippet: 'mock' }
+                  }]
+              };
+          }
+          return { outcome: 'pass' as const };
+      }
+  };
+
+  try {
+    const result = await gate({
+      model: "gpt-4.1",
+      prompt: "Generate output...",
+      contract: MockSchema,
+      policies: [blockMockPolicy]
+    });
+    console.log("Result:", result);
+  } catch (e: any) {
+    if (e.name === 'GateiaError' && e.report) {
+         console.log("✅ Successfully Blocked!");
+         console.log("Violations:", JSON.stringify(e.report.violations, null, 2));
+    } else {
+        console.error("Unexpected Error:", e);
+    }
+  }
+
 }
 
 main();

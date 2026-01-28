@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { GateParams, GateResult, GateiaError, Policy, Violation, GateEnforcementReport } from './types';
+import { GateParams, GateResult, GateiaError, Policy, Violation, GateEnforcementReport, AppliedPolicyRec, PolicyAction, GateOutcome, GateUsage } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { ModelRegistry } from './adapters/registry';
 import { ContractEngine } from './engine/contract';
 import { PolicyEngine } from './engine/policy';
-import { predefinedPolicies } from './engine/defaults';
+import { policyLibrary } from './policies';
 
-// Global instances (lazy init or singleton)
+// Global instances
 const registry = new ModelRegistry();
 const contractEngine = new ContractEngine();
 const policyEngine = new PolicyEngine();
@@ -22,7 +22,7 @@ export async function gate<T extends z.ZodTypeAny>(params: GateParams<T>): Promi
     // 2. Resolve Policies
     const activePolicies: Policy[] = policies.map(p => {
       if (typeof p === 'string') {
-        const found = predefinedPolicies[p];
+        const found = policyLibrary[p];
         if (!found) throw new GateiaError(`Unknown policy: ${p}`, traceId);
         return found;
       }
@@ -56,6 +56,7 @@ export async function gate<T extends z.ZodTypeAny>(params: GateParams<T>): Promi
       const result = await adapter.generate(currentPrompt, { 
           // If contract is object/schema, hint json mode if supported by adapter?
           // For now, adapter ignores options in stub
+          modelName: params.model // Pass explicit model name to adapter
       });
       
       if (result.tokens) {
@@ -118,15 +119,34 @@ export async function gate<T extends z.ZodTypeAny>(params: GateParams<T>): Promi
       }
     }
 
+    // Construct usage object
+    const finalUsage: GateUsage = {
+        provider: registry.getAdapter(model).constructor.name,
+        model: params.model,
+        latencyMs: finalLatency,
+        tokens: {
+            prompt: totalTokens.prompt,
+            completion: totalTokens.completion,
+            total: totalTokens.total
+        }
+        // costUsd: ... // TODO: Add cost calculation logic based on provider/model
+    };
+
     if (!finalSafeOutput) {
         // Block/Throw
         // Construct report
         const report: GateEnforcementReport = {
-            appliedPolicies: activePolicies.map(p => p.id),
-            contractOutcome: 'fail',
+            appliedPolicies: [], // Policies not applied due to contract failure
+            contract: {
+                outcome: 'fail',
+                errors: contractEngine.validate(rawResult, contract).errors // re-running valid logic or grabbing from lastError
+            },
             actions: [],
-            violations: [{ policyId: 'contract', message: lastError || "Contract Validation Failed", severity: 'critical' }]
+            violations: [{ policyId: 'contract', code: 'CONTRACT_FAIL', message: lastError || "Contract Validation Failed", severity: 'high' }]
         };
+        // For accurate errors we might want to capture them better above instead of re-running or assuming lastError string
+        // But for now this matches structure.
+        
         throw new GateiaError("Contract Check Failed", traceId, report);
     }
 
@@ -137,53 +157,60 @@ export async function gate<T extends z.ZodTypeAny>(params: GateParams<T>): Promi
     const policyResult = await policyEngine.evaluate(activePolicies, finalSafeOutput, policyCtx);
 
     let finalViolations = policyResult.violations || [];
-    let enforcementActions: string[] = [];
+    let enforcementActions: PolicyAction[] = [];
     
+    // Detailed policy reporting
+    const appliedRecs: AppliedPolicyRec[] = activePolicies.map(p => {
+        const policyViolations = finalViolations.filter(v => v.policyId === p.id);
+        let outcome: GateOutcome = 'pass';
+        if (policyViolations.length > 0) {
+            const isBlock = policyViolations.some(v => v.severity === 'high'); 
+            outcome = isBlock ? 'block' : 'warn'; 
+        }
+        return { 
+            id: p.id, 
+            version: p.version,
+            mode: p.mode || 'enforce',
+            outcome,
+            reasons: policyViolations.map(v => v.message)
+        };
+    });
+
     if (policyResult.rewrittenOutput) {
         finalSafeOutput = policyResult.rewrittenOutput;
-        enforcementActions.push('rewritten');
+        enforcementActions.push({ type: 'rewrite', policyId: 'policy-engine', note: 'Content rewritten by policy' });
     }
 
+    const report: GateEnforcementReport = {
+        appliedPolicies: appliedRecs,
+        contract: {
+            outcome: contractOutcome,
+            // If repaired, we could list repairs here if we tracked them detailly
+        },
+        actions: enforcementActions,
+        violations: finalViolations
+    };
+
     if (policyResult.outcome === 'block') {
-         const report: GateEnforcementReport = {
-            appliedPolicies: activePolicies.map(p => p.id),
-            contractOutcome,
-            actions: enforcementActions,
-            violations: finalViolations
-         };
-         
          const onBlock = behavior?.onBlock || 'throw'; // Default throw?
          if (onBlock === 'throw') {
              throw new GateiaError("Policy Blocked Response", traceId, report);
          }
          // Return with no safeOutput? Or just raw?
-         // Result<T> safeOutput is optional.
          return {
+             safeOutput: undefined,
              traceId,
              enforcement: report,
-             usage: { provider: 'unknown', model: params.model, tokens: totalTokens }, // TODO: propagate provider name
-             safeOutput: undefined 
+             usage: finalUsage,
+             rawOutput: options?.includeRawOutput ? rawResult : undefined
          };
     }
-
-    // Success
-    const report: GateEnforcementReport = {
-        appliedPolicies: activePolicies.map(p => p.id),
-        contractOutcome,
-        actions: enforcementActions,
-        violations: finalViolations
-    };
 
     return {
         safeOutput: finalSafeOutput,
         traceId,
         enforcement: report,
-        usage: {
-            provider: registry.getAdapter(model).constructor.name, // quick hack name
-            model: params.model,
-            tokens: totalTokens,
-            latencyMs: finalLatency
-        },
+        usage: finalUsage,
         rawOutput: options?.includeRawOutput ? rawResult : undefined
     };
 
