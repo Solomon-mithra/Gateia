@@ -25,7 +25,7 @@ In production, **probability is a liability.** Gateia restores deterministic con
 *   **🛡️ Zero Hallucination Policy**: Gateia does not use LLMs to verify. It uses deterministic logic and regex engines. It is impossible for the verifier to hallucinate.
 *   **🏗️ Contract-First Architecture**: Define your data requirements with Zod schemas. If the output doesn't match, it doesn't ship.
 *   **📋 Audit-Ready Logging**: Every decision is traced, logged, and categorized by severity, making compliance (SOC2, HIPAA) audits straightforward.
-*   **� Fail-Closed Security**: If a policy returns a block signal (even with malformed data), Gateia defaults to blocking. Security is never compromised by runtime errors.
+*   **🔒 Fail-Closed Security**: If a policy returns a block signal (even with malformed data), Gateia defaults to blocking. Security is never compromised by runtime errors.
 
 ---
 
@@ -39,39 +39,47 @@ npm install gateia zod
 
 ## ⚡️ Quick Start
 
-Secure a loan processing agent in 30 seconds.
+**Scenario:** You have an AI Customer Support Agent. You need to ensure it **never** promises refunds it can't deliver, and **never** leaks customer PII.
 
 ```typescript
 import { verify } from 'gateia';
 import { z } from 'zod';
 
-// 1. Define the Business Contract
-// The AI *must* return data in this shape.
-const LoanDecisionContract = z.object({
-  approved: z.boolean(),
-  rate: z.number().min(2.5).max(10.0), // Business Logic
-  reason: z.string(),
-  risk_level: z.enum(['low', 'medium', 'high'])
+// 1. Define the "Safe Reply" Contract
+// The AI must generate a Draft Reply that fits this structure.
+const CustomerSupportContract = z.object({
+  sentiment: z.enum(['happy', 'neutral', 'angry']),
+  reply_text: z.string(),
+  ticket_status: z.enum(['open', 'resolved', 'escalated']),
+  requires_human_review: z.boolean()
 });
 
 // 2. The Verification Step
-// Run this *after* your LLM generates content.
+// Call this *after* obtaining the LLM response, but *before* sending it to the user.
 const result = await verify({
   output: llmResponse, 
-  contract: LoanDecisionContract,
-  policies: ['finance-safe', 'pii-safe', 'secrets-safe'],
+  contract: CustomerSupportContract,
+  policies: [
+      'finance-safe', // Block any unauthorized refund promises
+      'pii-safe',     // Redact any leaked phone numbers/emails
+  ],
   mode: 'enforce'
 });
 
 // 3. Deterministic Decision
 if (!result.allowed) {
-  // Blocked. Do not show to user.
-  console.error("Security Violation:", result.enforcement.violations);
+  // 🛑 BLOCKED: The AI tried to say something unsafe.
+  // Action: Fallback to a canned response or route to human agent.
+  console.warn("Safety Violation:", result.enforcement.violations);
+  sendToUser("I'm having trouble retrieving that info. A human will be with you shortly.");
 } else {
-  // Safe. Proceed to database/frontend.
-  console.log("Verified Data:", result.safeOutput);
+  // ✅ SAFE: The output adheres to your contract and policies.
+  // Action: Send the validated reply to the customer.
+  console.log("Verified Reply:", result.safeOutput.reply_text);
+  sendToUser(result.safeOutput.reply_text);
 }
 ```
+
 
 ---
 
