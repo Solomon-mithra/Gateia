@@ -2,7 +2,6 @@
 
 <div align="center">
 
-![Gateia](https://via.placeholder.com/1500x500?text=Gateia+Verification+Layer)
 
 **The Deterministic Verification Layer for Enterprise AI.**
 
