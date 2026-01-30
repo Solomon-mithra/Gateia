@@ -1,52 +1,75 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { gate } from '../src/index';
+import { describe, it, expect } from 'vitest';
+import { verify } from '../src/index';
 import { z } from 'zod';
-import { GateiaError } from '../src/types';
 
-describe('gate() integration', () => {
-    beforeEach(() => {
-        process.env.GATEIA_MOCK_ADAPTERS = 'true';
-        process.env.OPENAI_API_KEY = 'mock'; // needed to pass "missing creds" check
-    });
-
-    it('validates contract successfully (mock)', async () => {
-        // Mock adapter returns { mock: 'output' } by default in my stub
-        // Let's use a schema that matches it
+describe('verify() integration', () => {
+    it('validates contract successfully', async () => {
         const schema = z.object({ mock: z.string() });
+        const output = { mock: "value" };
         
-        const result = await gate({
-            model: 'gpt-4',
-            prompt: 'test',
-            contract: schema
+        const result = await verify({
+            output,
+            contract: schema,
+            policies: []
         });
-        
-        expect(result.safeOutput).toEqual({ mock: 'output' });
-        expect(result.traceId).toBeDefined();
+
+        expect(result.allowed).toBe(true);
+        expect(result.safeOutput).toEqual(output);
         expect(result.enforcement.contract.outcome).toBe('pass');
     });
 
+    it('blocks on contract violation', async () => {
+         const schema = z.object({ val: z.number() });
+         const result = await verify({
+             output: { val: "string" }, // Invalid type
+             contract: schema
+         });
+
+         expect(result.allowed).toBe(false);
+         expect(result.enforcement.contract.outcome).toBe('fail');
+         expect(result.safeOutput).toBeUndefined();
+    });
+
     it('blocks on policy violation', async () => {
-        // We need the adapter to return "guaranteed returns"
-        // Since my stub is hardcoded, I can't easily change the return value without better mocking.
-        // I should have made the AdapterRegistry mockable or the adapter itself more flexible.
-        // But for this MVP step, I can just rely on the fact that I can't easily force the mock adapter to fail policy 
-        // UNLESS I change the stub to return strictly what I want via some side channel, 
-        // OR I mock the 'registry.getAdapter' call.
-        
-        // I will rely on Vitest capabilities to mock the module if I can, but integration tests usually mock boundaries.
-        // Let's define a custom policy that fails on the *default* mock output "mock: output".
-        
-        const failPolicy = {
-            id: 'no-mock',
+        const blockPolicy = {
+            id: 'mock-block',
             mode: 'enforce' as const,
-            check: (out: any) => JSON.stringify(out).includes('mock') ? { outcome: 'block' as const, violations: [{ policyId: 'no-mock', code: 'TEST_BLOCK', message: 'no mocks allowed', severity: 'high' as const }] } : { outcome: 'pass' as const }
+            check: () => ({ 
+                outcome: 'block' as const, 
+                violations: [{ 
+                    policyId: 'mock-block', 
+                    code: 'TEST', 
+                    message: 'Blocked', 
+                    severity: 'high' as const 
+                }] 
+            })
         };
 
-        await expect(gate({
-            model: 'gpt-4',
-            prompt: 'test',
+        const result = await verify({
+            output: { anything: true },
             contract: z.any(),
-            policies: [failPolicy]
-        })).rejects.toThrow("Policy Blocked Response");
+            policies: [blockPolicy]
+        });
+
+        expect(result.allowed).toBe(false);
+        expect(result.enforcement.violations).toHaveLength(1);
+        expect(result.enforcement.violations[0].policyId).toBe('mock-block');
+    });
+
+    it('throws on malformed policy result', async () => {
+        const badPolicy = {
+            id: 'broken-policy',
+            mode: 'enforce' as const,
+            check: () => ({ 
+                outcomee: 'block', // Typo!
+                violations: [] 
+            } as any)
+        };
+
+        await expect(verify({
+            output: {},
+            contract: z.any(),
+            policies: [badPolicy]
+        })).rejects.toThrow(/Invalid Policy Result/);
     });
 });

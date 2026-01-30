@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+// --- Policies ---
 export type GateOutcome = 'pass' | 'block' | 'warn' | 'rewrite';
 
 export interface PolicyAction {
@@ -17,48 +18,22 @@ export interface Violation {
 }
 
 export interface PolicyContext {
-  model: string;
-  prompt: any;
   traceId: string;
+  // Metadata about where the output came from, purely for logging/audit
+  metadata?: Record<string, any>; 
 }
 
-export interface PolicyResult {
+export interface PolicyResult<T = any> {
   outcome: GateOutcome;
   violations?: Violation[];
-  rewriteFn?: (output: any) => any;
+  rewriteFn?: (output: T) => T;
 }
 
-export interface Policy {
+export interface Policy<T = any> {
   id: string;
   version?: string;
   mode?: 'enforce' | 'audit';
-  check: (output: any, context: PolicyContext) => PolicyResult | Promise<PolicyResult>;
-}
-
-export interface GateOptions {
-  includeRawOutput?: boolean;
-}
-
-export interface GateBehavior {
-  mode?: 'enforce' | 'audit';
-  contract?: {
-    repair?: 'off' | 'auto';
-    maxRetries?: number;
-    maxRepairAttempts?: number;
-  };
-  policy?: {
-    rewrite?: 'off' | 'allowed';
-  };
-  onBlock?: 'throw' | 'return';
-}
-
-export interface GateParams<T extends z.ZodTypeAny> {
-  model: string;
-  prompt: string | { system?: string; user: string };
-  contract: T;
-  policies?: (string | Policy)[];
-  behavior?: GateBehavior;
-  options?: GateOptions;
+  check: (output: T, context: PolicyContext) => PolicyResult<T> | Promise<PolicyResult<T>>;
 }
 
 export interface AppliedPolicyRec {
@@ -69,46 +44,45 @@ export interface AppliedPolicyRec {
     reasons?: string[];
 }
 
+// --- Contract ---
 export interface ContractEnforcement {
-    name?: string;
-    outcome: 'pass' | 'fail' | 'repaired';
+    outcome: 'pass' | 'fail';
     errors?: { path: string; message: string }[];
-    repairs?: { op: 'add' | 'remove' | 'replace'; path: string; note?: string }[];
 }
 
-export interface GateEnforcementReport {
+// --- Verification ---
+
+export interface VerifyParams<T extends z.ZodTypeAny> {
+  output: unknown; // The raw output to verify (string or object)
+  contract: T;
+  policies?: (string | Policy<z.infer<T>>)[];
+  mode?: 'enforce' | 'audit'; // Default: enforce
+  options?: {
+      includeRawOutput?: boolean;
+  };
+}
+
+export interface EnforcementReport {
   appliedPolicies: AppliedPolicyRec[];
   contract: ContractEnforcement;
   actions: PolicyAction[];
   violations: Violation[];
 }
 
-export interface GateUsage {
-  provider: string;
-  model: string;
-  latencyMs: number;
-  tokens?: {
-    prompt: number;
-    completion: number;
-    total: number;
-  };
-  costUsd?: number;
-}
-
-export interface GateResult<T> {
-  safeOutput?: T;
+export interface VerifyResult<T> {
+  allowed: boolean;        // Main decision: true if no high-severity violations and valid contract
+  safeOutput?: T;          // The validated (and possibly rewritten) output. Undefined if !allowed.
   traceId: string;
-  enforcement: GateEnforcementReport;
-  usage: GateUsage;
+  enforcement: EnforcementReport;
   rawOutput?: any;
 }
 
 export class GateiaError extends Error {
   public traceId: string;
-  public report?: GateEnforcementReport;
+  public report?: EnforcementReport;
   public originalError?: unknown;
 
-  constructor(message: string, traceId: string, report?: GateEnforcementReport, originalError?: unknown) {
+  constructor(message: string, traceId: string, report?: EnforcementReport, originalError?: unknown) {
     super(message);
     this.name = 'GateiaError';
     this.traceId = traceId;

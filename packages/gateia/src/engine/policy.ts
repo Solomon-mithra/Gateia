@@ -1,4 +1,20 @@
-import { Policy, PolicyResult, GateOutcome, Violation, PolicyContext } from '../types';
+import { z } from 'zod';
+import { Policy, PolicyResult, GateOutcome, Violation, PolicyContext, GateiaError } from '../types';
+
+// Runtime schema to validate Policy returns (Defense against bad JS)
+const ViolationSchema = z.object({
+    policyId: z.string(),
+    code: z.string(),
+    message: z.string(),
+    severity: z.enum(['low', 'med', 'high']),
+    evidence: z.object({ snippet: z.string() }).optional()
+});
+
+const PolicyResultSchema = z.object({
+    outcome: z.enum(['pass', 'block', 'warn', 'rewrite']),
+    violations: z.array(ViolationSchema).optional(),
+    rewriteFn: z.function().optional()
+});
 
 export class PolicyEngine {
   async evaluate(
@@ -13,16 +29,20 @@ export class PolicyEngine {
 
     // Policies are applied in order
     for (const policy of policies) {
-      if (policy.mode === 'audit' || (policy.mode !== 'enforce' && policy.mode !== 'audit')) {
-        // Default to audit if not specified? Or enforce? 
-        // User requirements say "Policy interface: mode: enforce|audit"
-        // Let's assume default is 'enforce' if not present in policy object, 
-        // BUT the policy object itself has a mode.
-        // Actually, the `gate` call has behavior.mode too.
-        // We will respect policies' own mode property.
+      // Execute Policy
+      const rawResult = await policy.check(currentOutput, context);
+      
+      // FATAL: Runtime Validation of Policy Result
+      // If the user made a typo (e.g. 'outcomee') or forgot severity, we MUST crash/alert.
+      const parse = PolicyResultSchema.safeParse(rawResult);
+      if (!parse.success) {
+          throw new GateiaError(
+              `Invalid Policy Result from '${policy.id}': ${parse.error.issues.map(i => i.path.join('.') + ' ' + i.message).join(', ')}`, 
+              context.traceId
+          );
       }
 
-      const result = await policy.check(currentOutput, context);
+      const result = parse.data as PolicyResult; // safe now
       
       // If violations, add them
       if (result.violations) {
@@ -41,19 +61,14 @@ export class PolicyEngine {
              // Let's collect all violations but stop rewrites.
          }
       } else if (result.outcome === 'rewrite') {
-         if (result.rewriteFn && policy.mode !== 'audit') {
-             currentOutput = result.rewriteFn(currentOutput);
+         // Re-attach the function from raw result because Zod strips functions sometimes or we just want the original reference
+         // Actually Zod schema above allows function pass-through if configured, but let's be safe:
+         if (rawResult.rewriteFn && policy.mode !== 'audit') {
+             currentOutput = rawResult.rewriteFn(currentOutput);
              hasRewrite = true;
-             // If it was pass but now rewrite, outcome is pass (with rewrite)
-         } else if (policy.mode === 'audit') {
-            // record that it WOULD have rewritten
          }
       }
     }
-
-    // If any blocking violation occurred (non-audit), result is block
-    // We need to filter violations to check if any critical/enforced ones exist
-    // Actually simplicity: if `finalOutcome` was set to 'block', return block.
     
     return {
       outcome: finalOutcome,

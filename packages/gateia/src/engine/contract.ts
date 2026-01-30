@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { GateEnforcementReport } from '../types';
+import { EnforcementReport } from '../types';
 
 export interface ContractResult<T> {
   success: boolean;
@@ -27,8 +27,5 @@ export class ContractEngine {
     }
   }
   
-  // Helper to format error for the LLM repair prompt
-  formatRepairInstruction(error: string): string {
-    return `The previous response failed schema validation:\n${error}\nPlease fix the JSON to match the schema. Return ONLY valid JSON.`;
-  }
+  // Contract Engine is now pure validation
 }
