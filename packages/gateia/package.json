@@ -1,7 +1,7 @@
 {
   "name": "gateia",
-  "version": "0.1.5",
-  "description": "The trust layer for AI in production. Middleware for model routing, contract enforcement, and policy compliance.",
+  "version": "0.2.0",
+  "description": "The Deterministic Verification Layer for Enterprise AI.",
   "keywords": [
     "ai",
     "llm",
