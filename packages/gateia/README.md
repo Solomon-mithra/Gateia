@@ -14,18 +14,18 @@
 
 ---
 
-**Gateia** is the standard for implementing **Deterministic Guardrails** in AI applications. It acts as a final, immutable security layer between your AI models and your customers.
+**Gateia** is a deterministic verification layer for AI applications. It acts as a final, immutable security gate between your models and your customers.
 
-Unlike "AI-judging-AI" solutions, Gateia enables you to enforce **strict, code-based contracts**, ensuring that your application never halluncinates, leaks PII, or violates business rules—regardless of the underlying model (OpenAI, Anthropic, or Llama).
+Unlike "AI-judging-AI" solutions, Gateia enforces **strict, code-based contracts** and deterministic policies that block known unsafe patterns—regardless of the underlying model (OpenAI, Anthropic, or Llama).
 
 ## 🚀 Why Gateia?
 
 In production, **probability is a liability.** Gateia restores deterministic control.
 
-*   **🛡️ Zero Hallucination Policy**: Gateia does not use LLMs to verify. It uses deterministic logic and regex engines. It is impossible for the verifier to hallucinate.
+*   **🛡️ Deterministic Verification**: Gateia does not use LLMs to verify. It uses deterministic logic and regex engines to validate outputs.
 *   **🏗️ Contract-First Architecture**: Define your data requirements with Zod schemas. If the output doesn't match, it doesn't ship.
 *   **📋 Audit-Ready Logging**: Every decision is traced, logged, and categorized by severity, making compliance (SOC2, HIPAA) audits straightforward.
-*   **🔒 Fail-Closed Security**: If a policy returns a block signal (even with malformed data), Gateia defaults to blocking. Security is never compromised by runtime errors.
+*   **🔒 Fail-Closed Security**: If a policy returns a block signal (even with malformed data), Gateia defaults to blocking.
 
 ---
 
@@ -39,45 +39,21 @@ npm install gateia zod
 
 ## ⚡️ Quick Start
 
-**Scenario:** You have an AI Customer Support Agent. You need to ensure it **never** promises refunds it can't deliver, and **never** leaks customer PII.
+**Scenario:** You have an AI Customer Support Agent. You need to block refund guarantees and PII.
 
 ```typescript
-import { verify } from 'gateia';
-import { z } from 'zod';
+import { verify } from "gateia";
+import { z } from "zod";
 
-// 1. Define the "Safe Reply" Contract
-// The AI must generate a Draft Reply that fits this structure.
-const CustomerSupportContract = z.object({
-  sentiment: z.enum(['happy', 'neutral', 'angry']),
-  reply_text: z.string(),
-  ticket_status: z.enum(['open', 'resolved', 'escalated']),
-  requires_human_review: z.boolean()
+const Reply = z.object({ reply: z.string() });
+
+const res = await verify({
+  output: { reply: "Refund guaranteed. Email me at test@example.com" }, // pretend this came from an LLM
+  contract: Reply,
+  policies: ["finance-safe", "pii-safe"]
 });
 
-// 2. The Verification Step
-// Call this *after* obtaining the LLM response, but *before* sending it to the user.
-const result = await verify({
-  output: llmResponse, 
-  contract: CustomerSupportContract,
-  policies: [
-      'finance-safe', // Block any unauthorized refund promises
-      'pii-safe',     // Redact any leaked phone numbers/emails
-  ],
-  mode: 'enforce'
-});
-
-// 3. Deterministic Decision
-if (!result.allowed) {
-  // 🛑 BLOCKED: The AI tried to say something unsafe.
-  // Action: Fallback to a canned response or route to human agent.
-  console.warn("Safety Violation:", result.enforcement.violations);
-  sendToUser("I'm having trouble retrieving that info. A human will be with you shortly.");
-} else {
-  // ✅ SAFE: The output adheres to your contract and policies.
-  // Action: Send the validated reply to the customer.
-  console.log("Verified Reply:", result.safeOutput.reply_text);
-  sendToUser(result.safeOutput.reply_text);
-}
+console.log(res.allowed ? "ALLOWED" : "BLOCKED");
 ```
 
 
@@ -90,7 +66,7 @@ Gateia ships with battle-tested policies for common enterprise risks.
 | Policy ID | Risk Category | Description | Severity |
 |-----------|---------------|-------------|----------|
 | `finance-safe` | **Compliance** | Blocks non-compliant guarantee language (e.g., "100% no risk", "guaranteed return"). | High |
-| `pii-safe` | **Privacy** | Redacts or blocks Personally Identifiable Information (Emails, Phone Numbers). | High |
+| `pii-safe` | **Privacy** | Blocks personally identifiable information (emails, phone numbers, etc.). | High |
 | `secrets-safe` | **Security** | Detects leaked API keys (AWS, Stripe, OpenAI, Slack) and private keys. | High |
 | `markup-safe` | **Security** | Prevents XSS by blocking `<script>`, `iframe`, and other HTML injection vectors. | High |
 
@@ -138,9 +114,12 @@ const result = await verify({
 
 Every call to `verify()` returns a comprehensive `EnforcementReport`. Use this for your internal dashboards and compliance logs.
 
+**Note:** `safeOutput` is always included on the response, but it will be `undefined` when `allowed === false` (contract failure or policy block).
+
 ```json
 {
   "allowed": false,
+  "safeOutput": null,
   "traceId": "123e4567-e89b-12d3-a456-426614174000",
   "enforcement": {
     "contract": { "outcome": "pass" },

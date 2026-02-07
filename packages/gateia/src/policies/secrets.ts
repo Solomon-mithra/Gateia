@@ -8,10 +8,19 @@ export const secretsSafe: Policy = {
         
         // Common patterns for API keys and secrets
         const patterns = [
-            { name: 'OpenAI Key', regex: /sk-[a-zA-Z0-9]{20,}/ },
-            { name: 'AWS Access Key', regex: /AKIA[0-9A-Z]{16}/ },
-            { name: 'Generic Private Key', regex: /-----BEGIN PRIVATE KEY-----/ },
-            { name: 'GitHub Token', regex: /ghp_[a-zA-Z0-9]{36}/ }
+            { name: 'OpenAI Key', regex: /\bsk-[a-zA-Z0-9]{20,}\b/ },
+            { name: 'AWS Access Key', regex: /\bAKIA[0-9A-Z]{16}\b/ },
+            { name: 'AWS Secret Key', regex: /\b(?:aws|amazon)?[_-]?secret[_-]?access[_-]?key\b.{0,20}[A-Za-z0-9\/+=]{40}\b/i },
+            { name: 'Generic Private Key', regex: /-----BEGIN (?:RSA|EC|DSA|PGP)? ?PRIVATE KEY-----/ },
+            { name: 'GitHub Token', regex: /\bghp_[a-zA-Z0-9]{36}\b/ },
+            { name: 'GitHub Fine-grained Token', regex: /\bgithub_pat_[a-zA-Z0-9_]{82}\b/ },
+            { name: 'Slack Token', regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
+            { name: 'Stripe Secret Key', regex: /\bsk_live_[A-Za-z0-9]{24}\b/ },
+            { name: 'Stripe Restricted Key', regex: /\brk_live_[A-Za-z0-9]{24}\b/ },
+            { name: 'Twilio API Key', regex: /\bSK[0-9a-fA-F]{32}\b/ },
+            { name: 'Mailgun API Key', regex: /\bkey-[0-9a-fA-F]{32}\b/ },
+            { name: 'Google API Key', regex: /\bAIza[0-9A-Za-z\-_]{35}\b/ },
+            { name: 'JWT', regex: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/ }
         ];
 
         const violations = [];
