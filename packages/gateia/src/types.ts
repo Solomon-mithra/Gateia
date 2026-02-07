@@ -71,7 +71,7 @@ export interface EnforcementReport {
 
 export interface VerifyResult<T> {
   allowed: boolean;        // Main decision: true if no high-severity violations and valid contract
-  safeOutput?: T;          // The validated (and possibly rewritten) output. Undefined if !allowed.
+  safeOutput: T | undefined; // The validated (and possibly rewritten) output. Undefined if !allowed.
   traceId: string;
   enforcement: EnforcementReport;
   rawOutput?: any;

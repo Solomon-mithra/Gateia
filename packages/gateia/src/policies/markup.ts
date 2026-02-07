@@ -12,7 +12,12 @@ export const markupSafe: Policy = {
             { name: 'Script Tag', regex: /<script[\s\S]*?>/i },
             { name: 'Iframe Tag', regex: /<iframe[\s\S]*?>/i },
             { name: 'Object Tag', regex: /<object[\s\S]*?>/i },
-            { name: 'Javascript Protocol', regex: /javascript:/i }
+            { name: 'Javascript Protocol', regex: /javascript:/i },
+            { name: 'Data URL', regex: /data:text\/html/i },
+            { name: 'Event Handler', regex: /\son\w+\s*=/i },
+            { name: 'SVG Tag', regex: /<svg[\s\S]*?>/i },
+            { name: 'Meta Refresh', regex: /<meta[\s\S]*?http-equiv=["']?refresh["']?/i },
+            { name: 'Base Tag', regex: /<base[\s\S]*?>/i }
         ];
 
         const violations = [];

@@ -20,6 +20,7 @@ const policyEngine = new PolicyEngine();
 export async function verify<T extends z.ZodTypeAny>(params: VerifyParams<T>): Promise<VerifyResult<z.infer<T>>> {
     const traceId = uuidv4();
     const { output, contract, policies = [], mode = 'enforce' } = params;
+    const includeRawOutput = params.options?.includeRawOutput ?? true;
 
     try {
         // --- 1. Contract Validation ---
@@ -139,7 +140,7 @@ export async function verify<T extends z.ZodTypeAny>(params: VerifyParams<T>): P
             safeOutput: allowed ? safeOutput : undefined,
             traceId,
             enforcement: report,
-            rawOutput: params.options?.includeRawOutput ? output : undefined
+            rawOutput: includeRawOutput ? output : undefined
         };
 
     } catch (error) {
